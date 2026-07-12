@@ -20,7 +20,7 @@ jobs:
         run: cd extracted && npm install
 
       - name: Build
-        run: cd extracted && npm run build
+        run: cd extracted && npm run build -- --base=/Earning/
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
