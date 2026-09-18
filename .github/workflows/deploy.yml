@@ -41,7 +41,7 @@ jobs:
 
       - name: Build
         working-directory: extracted
-        run: npm run build
+        run: npm run build -- --base=/Earning/
 
       - name: Prepare publish folder
         run: |
