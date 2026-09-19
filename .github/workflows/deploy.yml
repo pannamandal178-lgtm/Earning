@@ -46,8 +46,8 @@ jobs:
       - name: Prepare publish folder
         run: |
           rm -rf publish
-          mkdir -p publish
-          cp -r extracted/dist/. publish/
+          mkdir -p publish/Earning
+          cp -r extracted/dist/. publish/Earning/
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
