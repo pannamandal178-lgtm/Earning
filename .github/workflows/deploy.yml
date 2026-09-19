@@ -43,14 +43,8 @@ jobs:
         working-directory: extracted
         run: npm run build -- --base=/Earning/
 
-      - name: Prepare publish folder
-        run: |
-          rm -rf publish
-          mkdir -p publish/Earning
-          cp -r extracted/dist/. publish/Earning/
-
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: publish
+          publish_dir: extracted/dist
