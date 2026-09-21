@@ -19,13 +19,13 @@ jobs:
       - name: Check ZIP
         run: |
           ls -la
-          test -f halallearn_fixed_v2.zip
+          test -f "halallearn_fixed_v2(7).zip"
 
       - name: Extract ZIP
         run: |
           rm -rf extracted
           mkdir extracted
-          unzip -o halallearn_fixed_v2.zip -d extracted
+          unzip -o "halallearn_fixed_v2(7).zip" -d extracted
           cp -r extracted/halallearn_fix2/. extracted/
 
       - name: Setup Node.js
