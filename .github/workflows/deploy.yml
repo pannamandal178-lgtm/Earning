@@ -15,17 +15,39 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Check ZIP
+      - name: Pick newest valid ZIP
         run: |
           ls -la
-          test -f "halallearn_fixed_v2(7).zip"
+          best=""
+          best_time=0
+          shopt -s nullglob
+          for z in *.zip; do
+            if unzip -tq "$z" > /dev/null 2>&1; then
+              t=$(git log -1 --format=%ct -- "$z")
+              echo "OK: $z"
+              if [ "$t" -ge "$best_time" ]; then
+                best="$z"
+                best_time="$t"
+              fi
+            else
+              echo "::warning::Skipping damaged ZIP: $z ($(stat -c%s "$z") bytes). Upload it again."
+            fi
+          done
+          if [ -z "$best" ]; then
+            echo "::error::No valid ZIP found in the repo. Upload the ZIP again."
+            exit 1
+          fi
+          echo "Using: $best"
+          echo "ZIP_FILE=$best" >> "$GITHUB_ENV"
 
       - name: Extract ZIP
         run: |
           rm -rf extracted
           mkdir extracted
-          unzip -o "halallearn_fixed_v2(7).zip" -d extracted
+          unzip -q -o "$ZIP_FILE" -d extracted
           cp -r extracted/halallearn_fix2/. extracted/
 
       - name: Setup Node.js
