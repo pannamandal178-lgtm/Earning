@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{margin:0;min-height:100%;background:#0f172a;color:#94a3b8;font-family:sans-serif}</style>
+</head>
+<body>
+<script>
+  var s = new URLSearchParams(location.search).get('s') || '';
+  if (/^https:\/\/[^\s"'<>]+$/.test(s)) {
+    var el = document.createElement('script');
+    el.src = s;
+    el.async = true;
+    document.body.appendChild(el);
+  }
+</script>
+</body>
+</html>
