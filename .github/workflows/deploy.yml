@@ -26,18 +26,18 @@ jobs:
           shopt -s nullglob
           for z in *.zip; do
             if unzip -tq "$z" > /dev/null 2>&1; then
-              t=$(git log -1 --format=%ct -- "$z")
+              t=$(git log -1 --format=%ct -- "$z" || echo 0)
               echo "OK: $z"
               if [ "$t" -ge "$best_time" ]; then
                 best="$z"
                 best_time="$t"
               fi
             else
-              echo "::warning::Skipping damaged ZIP: $z ($(stat -c%s "$z") bytes). Upload it again."
+              echo "::warning::Skipping damaged ZIP: $z"
             fi
           done
           if [ -z "$best" ]; then
-            echo "::error::No valid ZIP found in the repo. Upload the ZIP again."
+            echo "::error::No valid ZIP found"
             exit 1
           fi
           echo "Using: $best"
@@ -48,7 +48,13 @@ jobs:
           rm -rf extracted
           mkdir extracted
           unzip -q -o "$ZIP_FILE" -d extracted
-          cp -r extracted/halallearn_fix2/. extracted/
+          # যেকোনো নামের ভিতরের ফোল্ডার Auto Detect করবে
+          inner=$(find extracted -maxdepth 2 -type f -name "package.json" | head -1 | xargs dirname)
+          if [ -n "$inner" ] && [ "$inner" != "extracted" ]; then
+            echo "Found project in: $inner"
+            cp -r $inner/. extracted/
+          fi
+          ls -la extracted/
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
