@@ -1,9 +1,10 @@
-name: Build and Deploy
+name: Build and publish site
 
 on:
   push:
-    branches:
-      - main
+    paths:
+      - 'app.zip'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -11,68 +12,35 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - uses: actions/checkout@v4
 
-      - name: Pick newest valid ZIP
-        run: |
-          ls -la
-          best=""
-          best_time=0
-          shopt -s nullglob
-          for z in *.zip; do
-            if unzip -tq "$z" > /dev/null 2>&1; then
-              t=$(git log -1 --format=%ct -- "$z" || echo 0)
-              echo "OK: $z"
-              if [ "$t" -ge "$best_time" ]; then
-                best="$z"
-                best_time="$t"
-              fi
-            else
-              echo "::warning::Skipping damaged ZIP: $z"
-            fi
-          done
-          if [ -z "$best" ]; then
-            echo "::error::No valid ZIP found"
-            exit 1
-          fi
-          echo "Using: $best"
-          echo "ZIP_FILE=$best" >> "$GITHUB_ENV"
-
-      - name: Extract ZIP
-        run: |
-          rm -rf extracted
-          mkdir extracted
-          unzip -q -o "$ZIP_FILE" -d extracted
-          # যেকোনো নামের ভিতরের ফোল্ডার Auto Detect করবে
-          inner=$(find extracted -maxdepth 2 -type f -name "package.json" | head -1 | xargs dirname)
-          if [ -n "$inner" ] && [ "$inner" != "extracted" ]; then
-            echo "Found project in: $inner"
-            cp -r $inner/. extracted/
-          fi
-          ls -la extracted/
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: extracted/package-lock.json
 
-      - name: Install dependencies
-        working-directory: extracted
-        run: npm install
+      - name: Unzip the app
+        run: |
+          mkdir site
+          unzip -q app.zip -d site
+          DIR=$(find site -maxdepth 1 -mindepth 1 -type d | head -n 1)
+          echo "APP_DIR=$DIR" >> "$GITHUB_ENV"
 
       - name: Build
-        working-directory: extracted
-        run: npm run build -- --base=/Earning/
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          cd "$APP_DIR"
+          npm install --no-audit --no-fund
+          npm run build
 
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: extracted/dist
+      - name: Publish to gh-pages
+        run: |
+          cd "$APP_DIR/dist"
+          touch .nojekyll
+          git init -q -b gh-pages
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add -A
+          git commit -q -m "Build from app.zip"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages
