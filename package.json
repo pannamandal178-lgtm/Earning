@@ -1,12 +1,15 @@
 {
-  "name": "mmwall-postback",
-  "version": "1.0.0",
-  "description": "Receives MM Wall postbacks and adds coins in Firebase (once per transaction)",
+  "name": "halallearn-postback-server",
+  "version": "3.0.0",
+  "private": true,
   "main": "server.js",
-  "scripts": { "start": "node server.js" },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test.js"
+  },
   "engines": { "node": ">=18" },
   "dependencies": {
     "express": "^4.19.2",
-    "firebase-admin": "^12.6.0"
+    "firebase-admin": "^12.7.0"
   }
 }

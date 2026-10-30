@@ -1,74 +1,44 @@
 'use strict';
-const crypto = require('crypto');
 const express = require('express');
 const admin = require('firebase-admin');
-const { processPostback, processClixwall } = require('./core');
+const { handlePostback } = require('./offerwallapi');
 
-// ---- settings (set them in Render > Environment) ----
-const SECRET = process.env.POSTBACK_SECRET || ''; // MM Wall: you choose it
-const CLIX_SECRET = process.env.CLIXWALL_SECRET || ''; // ClixWall: copy it from your website page in ClixWall
-const MULTIPLIER = Number(process.env.COIN_MULTIPLIER || 1) || 1;
-const ENFORCE_IP = String(process.env.ENFORCE_IP || 'false') === 'true';
-const ALLOWED_IP = process.env.ALLOWED_IP || '63.32.127.99'; // MM Wall's server
-
-if (!SECRET) console.warn('POSTBACK_SECRET is not set: MM Wall postbacks will be refused.');
-if (!CLIX_SECRET) console.warn('CLIXWALL_SECRET is not set: ClixWall postbacks will be refused.');
-
-let serviceAccount;
-try {
-  serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
-  if (serviceAccount.private_key) serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
-} catch (e) {
-  console.error('FIREBASE_SERVICE_ACCOUNT is not valid JSON');
-  process.exit(1);
+// Firebase service account: any env var whose name starts with FIREBASE_SERV
+// (JSON text, or the same JSON encoded as base64)
+function loadServiceAccount() {
+  const key = Object.keys(process.env).find((k) => k.startsWith('FIREBASE_SERV'));
+  if (!key) throw new Error('Firebase service account variable not found (its name must start with FIREBASE_SERV)');
+  let raw = String(process.env[key]).trim();
+  if (!raw.startsWith('{')) raw = Buffer.from(raw, 'base64').toString('utf8');
+  const sa = JSON.parse(raw);
+  if (sa.private_key) sa.private_key = sa.private_key.replace(/\\n/g, '\n');
+  return sa;
 }
-admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
-const db = admin.firestore();
-const FieldValue = admin.firestore.FieldValue;
 
-const same = (a, b) => {
-  const x = Buffer.from(String(a));
-  const y = Buffer.from(String(b));
-  return x.length === y.length && crypto.timingSafeEqual(x, y);
-};
+admin.initializeApp({ credential: admin.credential.cert(loadServiceAccount()) });
+const db = admin.firestore();
 
 const app = express();
-app.set('trust proxy', true);
+app.disable('x-powered-by');
+app.use(express.urlencoded({ extended: false, limit: '20kb' }));
+app.use(express.json({ limit: '20kb' }));
 
-app.get('/', (_req, res) => res.send('MM Wall postback server is running'));
-
-// ClixWall sends a form-encoded POST (the values can also be in the URL)
-app.use(express.urlencoded({ extended: false }));
-
-app.all('/mmwall', async (req, res) => {
-  const q = req.query || {};
-  if (!SECRET || !same(q.secret || '', SECRET)) return res.status(403).send('forbidden');
-  if (ENFORCE_IP) {
-    const ip = String(req.ip || '').replace('::ffff:', '');
-    if (ip !== ALLOWED_IP) return res.status(403).send('ip not allowed');
-  }
-  try {
-    const r = await processPostback({ db, FieldValue, params: q, multiplier: MULTIPLIER });
-    console.log('postback', q.transaction_id, '->', r.body);
-    return res.status(r.status).send(r.body);
-  } catch (e) {
-    console.error('postback failed', e);
-    return res.status(500).send('error'); // MM Wall will retry
-  }
+// OfferwallApi calls this (POST, with the parameters in the body or the query)
+app.all('/offerwallapi', async (req, res) => {
+  const params = { ...req.query, ...(req.body || {}) };
+  const r = await handlePostback(params, {
+    db,
+    secret: String(process.env.OFFERWALLAPI_SECRET || '').trim(),
+    maxReward: Number(process.env.MAX_REWARD_COINS) || 2000000
+  });
+  res.status(r.code).type('text/plain').send(r.text);
 });
 
-app.all('/clixwall', async (req, res) => {
-  const p = { ...(req.body || {}), ...(req.query || {}) };
-  const secret = p.secret || p.pwd || '';
-  if (!CLIX_SECRET || !same(secret, CLIX_SECRET)) return res.status(403).send('forbidden');
-  try {
-    const r = await processClixwall({ db, FieldValue, params: p, multiplier: MULTIPLIER });
-    console.log('clixwall', p.transaction_id, 'status=' + (p.status || p.s), '->', r.body);
-    return res.status(r.status).send(r.status === 200 ? 'OK' : r.body);
-  } catch (e) {
-    console.error('clixwall failed', e);
-    return res.status(500).send('error');
-  }
-});
+app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
+app.get('/', (req, res) => res.type('text/plain').send('HalalLearn postback server is running'));
+app.use((req, res) => res.status(404).type('text/plain').send('Not found'));
 
-app.listen(process.env.PORT || 3000, () => console.log('listening'));
+process.on('unhandledRejection', (e) => console.error('[unhandledRejection]', e));
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`[server] listening on ${PORT}`));
