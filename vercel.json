@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/postback/:path*", "destination": "https://earning-nk1y.onrender.com/:path*" },
+    { "source": "/Earning/:path*", "destination": "/:path*" }
+  ]
+}
