@@ -2,7 +2,7 @@
 const express = require('express');
 const admin = require('firebase-admin');
 const { handlePostback } = require('./offerwallapi');
-const { handleTaskComplete } = require('./task');
+const { runAuthSync } = require('./authsync');
 
 // Firebase service account: any env var whose name starts with FIREBASE_SERV
 // (JSON text, or the same JSON encoded as base64)
@@ -35,37 +35,30 @@ app.all('/offerwallapi', async (req, res) => {
   res.status(r.code).type('text/plain').send(r.text);
 });
 
-// "Complete Task" counter. The browser calls this directly, so CORS is open (no cookies are used, only a Bearer token).
-const taskCors = (req, res, next) => {
-  res.set('Access-Control-Allow-Origin', '*');
-  res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.set('Access-Control-Max-Age', '86400');
-  if (req.method === 'OPTIONS') return res.sendStatus(204);
-  next();
-};
-app.options('/task/complete', taskCors);
-app.post('/task/complete', taskCors, async (req, res) => {
+// Automatic clean-up: people deleted in Firebase Authentication are removed from the database too
+// (so they leave the leaderboard and the admin list). Runs by itself while the server is awake,
+// and the app also pings it when it opens (that wakes the free server up).
+let syncRunning = false;
+let lastSyncAt = 0;
+async function maybeSync(force) {
+  if (syncRunning) return;
+  if (!force && Date.now() - lastSyncAt < 3 * 60 * 1000) return;
+  syncRunning = true;
+  lastSyncAt = Date.now();
   try {
-    const header = String(req.headers.authorization || '');
-    const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
-    if (!token) return res.status(401).json({ error: 'not-logged-in' });
-    let decoded;
-    try {
-      decoded = await admin.auth().verifyIdToken(token);
-    } catch (e) {
-      return res.status(401).json({ error: 'bad-token' });
-    }
-    const r = await handleTaskComplete({
-      uid: decoded.uid,
-      db,
-      dayOffsetMinutes: Number(process.env.DAY_UTC_OFFSET_MINUTES) || 330
-    });
-    res.status(r.code).json(r.body);
+    await runAuthSync({ auth: admin.auth(), db });
   } catch (e) {
-    console.error('[task] route error:', e && e.message);
-    res.status(500).json({ error: 'server-error' });
+    console.error('[authsync] error:', e && e.message);
+  } finally {
+    syncRunning = false;
   }
+}
+setInterval(() => maybeSync(false), 5 * 60 * 1000);
+setTimeout(() => maybeSync(true), 15000);
+app.get('/sync/ping', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  maybeSync(false);
+  res.json({ ok: true });
 });
 
 app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
