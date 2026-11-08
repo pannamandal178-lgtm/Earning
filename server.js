@@ -3,6 +3,7 @@ const express = require('express');
 const admin = require('firebase-admin');
 const { handlePostback } = require('./offerwallapi');
 const { runAuthSync } = require('./authsync');
+const { handleTapClaim } = require('./tap');
 
 // Firebase service account: any env var whose name starts with FIREBASE_SERV
 // (JSON text, or the same JSON encoded as base64)
@@ -59,6 +60,39 @@ app.get('/sync/ping', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   maybeSync(false);
   res.json({ ok: true });
+});
+
+// "Tap & Earn": the browser calls this directly, so CORS is open (no cookies, only a Bearer token that is checked below).
+const tapCors = (req, res, next) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Max-Age', '86400');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+};
+app.options('/tap/claim', tapCors);
+app.post('/tap/claim', tapCors, async (req, res) => {
+  try {
+    const header = String(req.headers.authorization || '');
+    const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+    if (!token) return res.status(401).json({ error: 'not-logged-in' });
+    let decoded;
+    try {
+      decoded = await admin.auth().verifyIdToken(token);
+    } catch (e) {
+      return res.status(401).json({ error: 'bad-token' });
+    }
+    const r = await handleTapClaim({
+      uid: decoded.uid,
+      db,
+      dayOffsetMinutes: Number(process.env.DAY_UTC_OFFSET_MINUTES) || 330
+    });
+    res.status(r.code).json(r.body);
+  } catch (e) {
+    console.error('[tap] route error:', e && e.message);
+    res.status(500).json({ error: 'server-error' });
+  }
 });
 
 app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
